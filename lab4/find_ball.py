@@ -35,7 +35,7 @@ def find_ball(opencv_image, debug=False):
 		pil_image = Image.fromarray(edges)
 		pil_image.show()
 	# Apply HughCircles	
-	circles=cv2.HoughCircles(opencv_image,cv2.HOUGH_GRADIENT,2,100,param1=250,param2=60)
+	circles=cv2.HoughCircles(opencv_image,cv2.HOUGH_GRADIENT,1.3,50,param1=200,param2=40)
 	
 	if circles is not None:
 		if debug:
