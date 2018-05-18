@@ -14,7 +14,6 @@ from pose_transform import *
 from utils import *
 from cozmo.util import degrees, Angle, Pose, distance_mm, speed_mmps, radians
 
-
 def astar(grid, heuristic):
     """Perform the A* search algorithm on a defined grid
 
@@ -43,6 +42,22 @@ def calculate_path(current_grid):
     path = astar(grid, heuristic)
     path.pop(0)
     return path
+    
+def update_grid_with_goal(goal_x, goal_y, goal_angle):
+    grid.clearGoals()
+    adjusted_goal = adjust_goal_coord(goal_x, goal_y, goal_angle)
+    goal_grid = adjusted_goal[0]
+    goal_angle = adjusted_goal[1]
+    grid.addGoal(goal_grid)
+    obstacles = get_obstacles_around_coord(goal_x, goal_y)
+    grid.addObstacles(obstacles)
+    return goal_angle
+    
+def get_relative_coord(cube, reference_pose):
+    cube_relative_pose = get_relative_pose(cube.pose, reference_pose)
+    coord_x = math.floor((cube_relative_pose.position.x+25+12) / grid.scale)
+    coord_y = math.floor((cube_relative_pose.position.y+12) / grid.scale)
+    return coord_x, coord_y, cube_relative_pose.rotation.angle_z.degrees
 
 def cozmoBehavior(robot: cozmo.robot.Robot):
     """Cozmo search behavior. See assignment description for details
@@ -62,155 +77,82 @@ def cozmoBehavior(robot: cozmo.robot.Robot):
     goal_grid = center
     grid.addGoal(center)
     goal_angle = 0
-    obstacle_cubes = [None, None]
     path = None
     grid_frame_pose = Pose(robot.pose.position.x, robot.pose.position.y, 0, angle_z = robot.pose.rotation.angle_z)
     current_grid = (0, 0)
     state = 'INIT'
-    action = 'NONE'
     current_angle = 0
+    cube2_seen = False
+    cube3_seen = False
     
     robot.move_lift(-3)
     robot.set_head_angle(degrees(0)).wait_for_completed()
     
     while not stopevent.is_set():
-        try:
-            cube = robot.world.wait_for_observed_light_cube(timeout=0.1, include_existing=True)
-            if cube.cube_id == 1:
-                action = 'GOAL_CUBE_SEEN'
-                print("Goal Cube seen")
-            if cube.cube_id > 1:
-                action = 'OBSTACLE_CUBE_SEEN'
-                print("Obstacle Cube seen")
-            cube_relative_pose = get_relative_pose(cube.pose, grid_frame_pose)
-            coord_x = math.floor((cube_relative_pose.position.x+25+12) / grid.scale)
-            coord_y = math.floor((cube_relative_pose.position.y+12) / grid.scale)
-        except asyncio.TimeoutError:
-            print("NO_CUBE_SEEN")
-            action = 'No Cube seen'
-            
-        if state == 'INIT':
-            if action == 'GOAL_CUBE_SEEN':
-                print("INIT - GOAL_CUBE_SEEN")
+        cube1 = robot.world.get_light_cube(1)
+        cube2 = robot.world.get_light_cube(2)
+        cube3 = robot.world.get_light_cube(3)
+
+        if cube1.is_visible:
+            if state == 'INIT' or state == 'NO_GOAL':
+                print('Cube 1 seen, add and go to goal')
                 # setup goal and calculate path
-                grid.clearGoals()
-                goal_angle = cube_relative_pose.rotation.angle_z.degrees
-                adjusted_goal = adjust_goal_coord(coord_x, coord_y, goal_angle)
-                goal_grid = adjusted_goal[0]
-                goal_angle = adjusted_goal[1]
-                grid.addGoal(goal_grid)
-                obstacles = get_obstacles_around_coord(coord_x, coord_y)
-                grid.addObstacles(obstacles)
-                state = 'FOUND_GOAL'
-            elif action == 'OBSTACLE_CUBE_SEEN':
-                print("INIT - OBSTACLE_CUBE_SEEN")
-                if cube.cube_id == 2:
-                    obstacle_id = 0
-                else:
-                    obstacle_id = 1
-                if obstacle_cubes[obstacle_id] == None: # new obstacle found
-                    print("Add Obstacle")
-                    # mark it as seen
-                    obstacle_cubes[obstacle_id] = (coord_x, coord_y)
-                    # add obstacle to grid
-                    obstacles = get_obstacles_around_coord(coord_x, coord_y)
-                    grid.addObstacles(obstacles)
-                    state = 'NO_GOAL'
-            elif action == 'NO_CUBE_SEEN':
-                print("INIT - NO_CUBE_SEEN")
-                state = 'NO_GOAL'
-            path = calculate_path(current_grid)
-                
-        elif state == 'NO_GOAL':
-            if action == 'GOAL_CUBE_SEEN':
-                print("NO_GOAL - GOAL_CUBE_SEEN")
-                # setup goal and calculate path
-                grid.clearGoals()
-                goal_angle = cube_relative_pose.rotation.angle_z.degrees
-                adjusted_goal = adjust_goal_coord(coord_x, coord_y, goal_angle)
-                goal_grid = adjusted_goal[0]
-                goal_angle = adjusted_goal[1]
-                grid.addGoal(goal_grid)
-                obstacles = get_obstacles_around_coord(coord_x, coord_y)
-                grid.addObstacles(obstacles)
+                coord_x, coord_y, goal_angle = get_relative_coord(cube1, grid_frame_pose)
+                goal_angle = update_grid_with_goal(coord_x, coord_y, goal_angle)
                 path = calculate_path(current_grid)
                 state = 'FOUND_GOAL'
-            elif action == 'OBSTACLE_CUBE_SEEN':
-                print("NO_GOAL - OBSTACLE_CUBE_SEEN")
-                if cube.cube_id == 2:
-                    obstacle_id = 0
-                else:
-                    obstacle_id = 1
-                if obstacle_cubes[obstacle_id] == None: # new obstacle found
-                    print("Add Obstacle")
-                    # mark it as seen
-                    obstacle_cubes[obstacle_id] = (coord_x, coord_y)
-                    # add obstacle to grid
-                    obstacles = get_obstacles_around_coord(coord_x, coord_y)
-                    grid.addObstacles(obstacles)
-                    path = calculate_path(current_grid)
-            elif action == 'NO_CUBE_SEEN':
-                print("NO_GOAL - NO_CUBE_SEEN")
-                    
-        elif state == 'FOUND_GOAL':
-            if action == 'GOAL_CUBE_SEEN':
-                print("FOUND_GOAL - GOAL_CUBE_SEEN")
-            elif action == 'OBSTACLE_CUBE_SEEN':
-                print("FOUND_GOAL - OBSTACLE_CUBE_SEEN")
-                if cube.cube_id == 2:
-                    obstacle_id = 0
-                else:
-                    obstacle_id = 1
-                if obstacle_cubes[obstacle_id] == None: # new obstacle found
-                    print("Add Obstacle")
-                    # mark it as seen
-                    obstacle_cubes[obstacle_id] = (coord_x, coord_y)
-                    # add obstacle to grid
-                    obstacles = get_obstacles_around_coord(coord_x, coord_y)
-                    grid.addObstacles(obstacles)
-                    path = calculate_path(current_grid)
-            elif action == 'NO_CUBE_SEEN':
-                print("FOUND_GOAL - NO_CUBE_SEEN")
-        
-        elif state == 'TURN_IN_PLACE':
-            if action == 'GOAL_CUBE_SEEN':
-                print("TURN_IN_PLACE - GOAL_CUBE_SEEN")
+            elif state == 'TURN_IN_PLACE':
+                print('TURNING: Cube 1 seen, add and go to goal')
                 # recalibrate current position
-                robot_relative_pose = get_relative_pose(robot.pose, grid_frame_pose)
-                robot_x = math.floor((robot_relative_pose.position.x+12) / grid.scale)
-                robot_y = math.floor((robot_relative_pose.position.y+12) / grid.scale)
+                robot_x, robot_y, robot_angle = get_relative_coord(robot, grid_frame_pose)
                 current_grid = (robot_x, robot_y)
-                current_angle = robot_relative_pose.rotation.angle_z.degrees
+                current_angle = robot_angle
                 # setup goal and calculate path
-                grid.clearGoals()
-                goal_angle = cube_relative_pose.rotation.angle_z.degrees
-                adjusted_goal = adjust_goal_coord(coord_x, coord_y, goal_angle)
-                goal_grid = adjusted_goal[0]
-                goal_angle = adjusted_goal[1]
-                grid.addGoal(goal_grid)
-                obstacles = get_obstacles_around_coord(coord_x, coord_y)
-                grid.addObstacles(obstacles)
+                coord_x, coord_y, goal_angle = get_relative_coord(cube1, grid_frame_pose)
+                goal_angle = update_grid_with_goal(coord_x, coord_y, goal_angle)
                 path = calculate_path(current_grid)
                 state = 'FOUND_GOAL'
-            elif action == 'OBSTACLE_CUBE_SEEN':
-                print("TURN_IN_PLACE - OBSTACLE_CUBE_SEEN")
-                if cube.cube_id == 2:
-                    obstacle_id = 0
-                else:
-                    obstacle_id = 1
-                if obstacle_cubes[obstacle_id] == None: # new obstacle found
-                    print("Add Obstacle")
-                    # mark it as seen
-                    obstacle_cubes[obstacle_id] = (coord_x, coord_y)
-                    # add obstacle to grid
-                    obstacles = get_obstacles_around_coord(coord_x, coord_y)
-                    grid.addObstacles(obstacles)
+            
+        if cube2.is_visible:
+            if state == 'INIT':
+                state = 'NO_GOAL'
+            print("Cube 2 seen")
+            if not cube2_seen:
+                # mark it as seen
+                cube2_seen = True
+                # add obstacle to grid
+                coord_x, coord_y, goal_angle = get_relative_coord(cube2, grid_frame_pose)
+                obstacles = get_obstacles_around_coord(coord_x, coord_y)
+                grid.addObstacles(obstacles)
+            if state != 'TURN_IN_PLACE':
+                path = calculate_path(current_grid)
+            else:
                 robot.turn_in_place(degrees(10), speed=degrees(20), in_parallel=False).wait_for_completed()
-            elif action == 'NO_CUBE_SEEN':
-                print("TURN_IN_PLACE - NO_CUBE_SEEN")
+                
+        if cube3.is_visible:
+            if state == 'INIT':
+                state = 'NO_GOAL'
+            print("Cube 3 seen")
+            if not cube3_seen:
+                # mark it as seen
+                cube3_seen = True
+                # add obstacle to grid
+                coord_x, coord_y, goal_angle = get_relative_coord(cube3, grid_frame_pose)
+                obstacles = get_obstacles_around_coord(coord_x, coord_y)
+                grid.addObstacles(obstacles)
+            if state != 'TURN_IN_PLACE':
+                path = calculate_path(current_grid)
+            else:
+                robot.turn_in_place(degrees(10), speed=degrees(20), in_parallel=False).wait_for_completed()
+
+        if not (cube1.is_visible or cube2.is_visible or cube3.is_visible):
+            if state == 'INIT':
+                path = calculate_path(current_grid)
+                state = 'NO_GOAL'
+            if state == 'TURN_IN_PLACE':
                 robot.turn_in_place(degrees(10), speed=degrees(20), in_parallel=False).wait_for_completed()
             
-        if len(path) > 0:
+        if path is not None and len(path) > 0:
             # figure out the pose angle. should keep the angle of the path traveled
             next_grid = path.pop(0)
             angle = get_step_angle(current_grid, next_grid, current_angle)
