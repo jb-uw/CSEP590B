@@ -43,14 +43,6 @@ class QLearningAgent(ReinforcementAgent):
         ReinforcementAgent.__init__(self, **args)
 
         "*** YOUR CODE HERE ***"
-        '''self.actionFn = actionFn
-        self.episodesSoFar = 0
-        self.accumTrainRewards = 0.0
-        self.accumTestRewards = 0.0
-        self.numTraining = int(numTraining)
-        self.epsilon = float(epsilon)
-        self.alpha = float(alpha)
-        self.discount = float(gamma)'''
         self.qValues = util.Counter()
         
     def getQValue(self, state, action):
@@ -78,8 +70,8 @@ class QLearningAgent(ReinforcementAgent):
             if self.qValues[(state, action)] > bestQValue:
                 bestQValue = self.qValues[(state, action)]
                 bestAction = action
-        if bestQValue == float("-inf"):
-            bestQValue = 0
+        if bestAction == None:
+            bestQValue = 0.0
         return bestQValue
 
     def computeActionFromQValues(self, state):
@@ -116,7 +108,6 @@ class QLearningAgent(ReinforcementAgent):
         if util.flipCoin(self.epsilon):
             action = random.choice(legalActions)
         else:
-            bestQValue = float("-inf")
             action = self.computeActionFromQValues(state)
         return action
 
@@ -132,7 +123,6 @@ class QLearningAgent(ReinforcementAgent):
         "*** YOUR CODE HERE ***"
         maxQ = self.computeValueFromQValues(nextState)
         qValue = self.qValues[(state,action)]
-        #oldQ.q = oldQ.q + this.learningRate * (eo.r + this.gamma * maxQ - oldQ.q);
         self.qValues[(state,action)] = qValue + self.alpha * (reward + self.discount*maxQ - qValue)
 
     def getPolicy(self, state):
